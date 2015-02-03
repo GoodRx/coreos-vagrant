@@ -1,0 +1,53 @@
+#cloud-config
+
+---
+coreos:
+  etcd:
+    addr: $public_ipv4:4001
+    peer-addr: $public_ipv4:7001
+    discovery: https://discovery.etcd.io/7ade0da99336c53b5ee74e47ab95ad9d
+  fleet:
+    public-ip: $public_ipv4
+    metadata: ip=$public_ipv4
+  units:
+  - name: etcd.service
+    command: start
+  - name: fleet.service
+    command: start
+  - name: docker-tcp.socket
+    command: start
+    enable: true
+    content: |
+      [Unit]
+      Description=Docker Socket for the API
+
+      [Socket]
+      ListenStream=2375
+      Service=docker.service
+      BindIPv6Only=both
+
+      [Install]
+      WantedBy=sockets.target
+  - name: newrelic.service
+    command: start
+    enable: true
+    runtime: true
+    content: |
+      [Unit]
+      Description=newrelic-sysmond
+
+      [Service]
+      EnvironmentFile=-/etc/environment
+      TimeoutStartSec=20m
+      ExecStartPre=/bin/sh -c "curl -o /tmp/newrelic-sysmond-2.0.2.111-linux.tar.gz https://download.newrelic.com/server_monitor/release/newrelic-sysmond-2.0.2.111-linux.tar.gz"
+      ExecStartPre=/bin/sh -c "tar xvfz /tmp/newrelic-sysmond-2.0.2.111-linux.tar.gz -C /tmp"
+      ExecStartPre=/bin/sh -c "/tmp/newrelic-sysmond-2.0.2.111-linux/scripts/nrsysmond-config -c /tmp/newrelic-sysmond-2.0.2.111-linux/nrsysmond.cfg --set license_key=<NEW_RELIC_LICENSE>"
+      ExecStartPre=/bin/sh -c "mkdir -p /var/run/newrelic"
+      ExecStartPre=/bin/sh -c "mkdir -p /var/log/newrelic"
+      ExecStart=/tmp/newrelic-sysmond-2.0.2.111-linux/daemon/nrsysmond.x64 -c /tmp/newrelic-sysmond-2.0.2.111-linux/nrsysmond.cfg -p /var/run/newrelic/nrsysmond.pid -f
+      ExecStop="/bin/sh -c "kill -15 $(cat /var/run/newrelic/nrsysmond.pid)"
+      Restart=on-failure
+      RestartSec=5
+
+      [Install]
+      WantedBy=multi-user.target
